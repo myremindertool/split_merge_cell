@@ -2,21 +2,20 @@ import streamlit as st
 import pandas as pd
 import io
 
-# Clean and split datetime into two columns (Date & Time)
+# Smart parser that splits into date + optional time
 def clean_and_split_datetime(val):
-    try:
-        dt = pd.to_datetime(val, errors='coerce')
-        if pd.isnull(dt):
-            return "", ""
-        date_str = dt.strftime("%d/%m/%Y")
-        time_str = dt.strftime("%H:%M:%S") if dt.time() != pd.Timestamp(0).time() else ""
-        return date_str, time_str
-    except Exception:
-        return "", ""
+    val = str(val).strip()
+    dt = pd.to_datetime(val, errors='coerce')
+    if pd.isnull(dt):
+        return val, ""
+    # Keep original format or use DD-MM-YYYY
+    date_out = dt.strftime("%d-%m-%Y")
+    time_out = dt.strftime("%H:%M:%S") if dt.time() != pd.Timestamp(0).time() else ""
+    return date_out, time_out
 
-# Apply split to column
+# Apply logic
 def split_column(df, column, method, parts):
-    if method == 'Date + Time Split (Text Format)':
+    if method == 'Split Date and Time':
         df['DOJ_Part1'], df['DOJ_Part2'] = zip(*df[column].apply(clean_and_split_datetime))
     else:
         split_data = df[column].astype(str).str.split(method, n=parts-1, expand=True)
@@ -24,7 +23,7 @@ def split_column(df, column, method, parts):
             df[f"{column}_Part{i+1}"] = split_data[i]
     return df
 
-# Save as clean Excel (no formulas)
+# Write file with openpyxl
 def write_excel(df):
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
@@ -32,8 +31,8 @@ def write_excel(df):
     output.seek(0)
     return output.read()
 
-# Streamlit UI
-st.title("🧼 Clean Date & Time Splitter (No 00:00:00 Excel Bug)")
+# Streamlit App
+st.title("📅 Date & Time Splitter (Excel-Safe)")
 
 uploaded_file = st.file_uploader("📁 Upload Excel file (.xlsx)", type=["xlsx"])
 
@@ -42,11 +41,11 @@ if uploaded_file:
     st.write("📋 File Preview:")
     st.dataframe(df.head())
 
-    column = st.selectbox("🧩 Choose a column to split", df.columns)
+    column = st.selectbox("📌 Choose column to split", df.columns)
 
     method = st.selectbox(
         "⚙️ Choose split method",
-        ["Space", "Comma", "Hyphen (-)", "Underscore (_)", "Date + Time Split (Text Format)"]
+        ["Space", "Comma", "Hyphen (-)", "Underscore (_)", "Split Date and Time"]
     )
 
     method_map = {
@@ -54,19 +53,19 @@ if uploaded_file:
         "Comma": ",",
         "Hyphen (-)": "-",
         "Underscore (_)": "_",
-        "Date + Time Split (Text Format)": "datetime"
+        "Split Date and Time": "smart"
     }
 
-    if method != "Date + Time Split (Text Format)":
+    if method != "Split Date and Time":
         num_parts = st.slider("🔢 Number of parts", 2, 4, 2)
 
-    if st.button("🚀 Process Now"):
-        if method == "Date + Time Split (Text Format)":
-            df = split_column(df, column, "datetime", 2)
+    if st.button("🚀 Run Split"):
+        if method == "Split Date and Time":
+            df = split_column(df, column, "smart", 2)
         else:
             df = split_column(df, column, method_map[method], num_parts)
 
-        st.success("✅ Split Completed!")
+        st.success("✅ Done!")
         st.dataframe(df.head())
 
         final_excel = write_excel(df)
@@ -74,6 +73,6 @@ if uploaded_file:
         st.download_button(
             label="📥 Download Clean Excel",
             data=final_excel,
-            file_name="clean_split_output.xlsx",
+            file_name="split_output.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
