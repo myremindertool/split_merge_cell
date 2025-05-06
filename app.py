@@ -3,17 +3,18 @@ import pandas as pd
 
 def split_column(df, column, delimiter, parts):
     if delimiter == 'Date & Time Split':
-        # Parse and format consistently as strings
+        # Parse the datetime and convert to consistent string format
         date_series = pd.to_datetime(df[column], errors='coerce')
-        df['Date'] = date_series.dt.strftime('%d/%m/%Y')  # e.g., 24/03/2025
-        df['Time'] = date_series.dt.strftime('%I:%M %p')  # e.g., 12:00 AM
+        df['Date'] = date_series.dt.strftime('%d/%m/%Y')  # Date format
+        df['Time'] = date_series.dt.strftime('%I:%M %p')  # Time format (12-hour with AM/PM)
     else:
+        # For generic delimiters like space, comma, etc.
         split_data = df[column].astype(str).str.split(delimiter, n=parts-1, expand=True)
         for i in range(parts):
             df[f"{column}_Part{i+1}"] = split_data[i]
     return df
 
-st.title("📊 jo Excel Column Splitter Tool")
+st.title("📊JOJU Excel Column Splitter Tool")
 
 uploaded_file = st.file_uploader("📁 Upload your Excel file (.xlsx)", type=["xlsx"])
 
@@ -48,7 +49,6 @@ if uploaded_file:
         st.success("✅ Column split successfully!")
         st.dataframe(df.head())
 
-        # Download result
         output_file = "split_output.xlsx"
         df.to_excel(output_file, index=False)
         with open(output_file, "rb") as f:
