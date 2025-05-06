@@ -1,27 +1,29 @@
 import streamlit as st
 import pandas as pd
+import re
 
-# Rebuild date string from individual characters
-def rebuild_date_from_chars(series):
-    result = []
-    for val in series.astype(str):
-        chars = list(val.strip())
-        raw = ''.join(chars).replace('-', '/').replace(' ', '')  # unify separators
-        try:
-            parsed = pd.to_datetime(raw, dayfirst=True, errors='coerce')
-            result.append("'" + parsed.strftime('%d/%m/%Y') if not pd.isnull(parsed) else '')
-        except:
-            result.append('')
-    return result
+def clean_and_format_date(raw_value):
+    # Ensure string format
+    val = str(raw_value).strip()
 
-# Split column based on delimiter or character-based rebuild
+    # Extract only date part: supports YYYY-MM-DD or DD/MM/YYYY or any messy mix
+    # Cut at 10 characters if it looks like date
+    possible_date = val[:10].replace('-', '/')
+
+    try:
+        parsed = pd.to_datetime(possible_date, dayfirst=True, errors='coerce')
+        return "'" + parsed.strftime('%d/%m/%Y') if not pd.isnull(parsed) else ''
+    except:
+        return ''
+
 def split_column(df, column, delimiter, parts):
-    if delimiter == 'Split by Character Rebuild':
-        # Rebuild date from char list
-        df['Date'] = rebuild_date_from_chars(df[column])
+    if delimiter == 'Robust Date Cleaner':
+        df['Date'] = df[column].apply(clean_and_format_date)
 
-        # Optional: Extract time
-        df['Time'] = pd.to_datetime(df[column], errors='coerce').dt.strftime('%I:%M %p')
+        # Optional Time — only extract if truly separate from date
+        df['Time'] = df[column].astype(str).apply(
+            lambda x: pd.to_datetime(x, errors='coerce').strftime('%I:%M %p') if ' ' in x or ':' in x else ''
+        )
     else:
         split_data = df[column].astype(str).str.split(delimiter, n=parts-1, expand=True)
         for i in range(parts):
@@ -29,7 +31,7 @@ def split_column(df, column, delimiter, parts):
     return df
 
 # Streamlit Interface
-st.title("📊 Excel Column Splitter with Clean Date Output")
+st.title("📊 Robust Excel Date Splitter (Safe from 00:00:00 Bug)")
 
 uploaded_file = st.file_uploader("📁 Upload Excel file (.xlsx)", type=["xlsx"])
 
@@ -38,11 +40,11 @@ if uploaded_file:
     st.write("📋 File Preview:")
     st.dataframe(df.head())
 
-    column = st.selectbox("🧩 Select the column to split", df.columns)
+    column = st.selectbox("🧩 Select a column", df.columns)
 
     split_option = st.selectbox(
-        "🧰 Choose split method",
-        ["Space", "Comma", "Hyphen (-)", "Underscore (_)", "Split by Character Rebuild"]
+        "🧰 Choose method",
+        ["Space", "Comma", "Hyphen (-)", "Underscore (_)", "Robust Date Cleaner"]
     )
 
     delimiter_map = {
@@ -50,23 +52,21 @@ if uploaded_file:
         "Comma": ",",
         "Hyphen (-)": "-",
         "Underscore (_)": "_",
-        "Split by Character Rebuild": "char"
+        "Robust Date Cleaner": "clean"
     }
 
-    if split_option != "Split by Character Rebuild":
-        num_parts = st.slider("🔢 Number of parts to split into", 2, 4, value=2)
+    if split_option != "Robust Date Cleaner":
+        num_parts = st.slider("🔢 How many parts?", 2, 4, 2)
 
-    if st.button("🚀 Split Now"):
-        if split_option == "Split by Character Rebuild":
-            df = split_column(df, column, "char", 2)
+    if st.button("🚀 Split Column"):
+        if split_option == "Robust Date Cleaner":
+            df = split_column(df, column, "clean", 2)
         else:
             df = split_column(df, column, delimiter_map[split_option], num_parts)
 
-        st.success("✅ Column split successfully!")
+        st.success("✅ Processed successfully!")
         st.dataframe(df.head())
 
-        # Export
-        output_file = "split_output.xlsx"
-        df.to_excel(output_file, index=False)
-        with open(output_file, "rb") as f:
-            st.download_button("📥 Download Result", f, file_name="split_output.xlsx")
+        df.to_excel("split_output.xlsx", index=False)
+        with open("split_output.xlsx", "rb") as f:
+            st.download_button("📥 Download Excel", f, file_name="split_output.xlsx")
