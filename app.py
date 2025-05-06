@@ -1,11 +1,11 @@
-
 import streamlit as st
 import pandas as pd
 
 def split_column(df, column, delimiter, parts):
     if delimiter == 'Date & Time Split':
-        df['Date'] = pd.to_datetime(df[column], errors='coerce').dt.date
-        df['Time'] = pd.to_datetime(df[column], errors='coerce').dt.time
+        # Consistent format: DD/MM/YYYY for Date, 12-hour format for Time
+        df['Date'] = pd.to_datetime(df[column], errors='coerce').dt.strftime('%d/%m/%Y')
+        df['Time'] = pd.to_datetime(df[column], errors='coerce').dt.strftime('%I:%M %p')
     else:
         split_data = df[column].astype(str).str.split(delimiter, n=parts-1, expand=True)
         for i in range(parts):
