@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import io
 
-# Extract parts from messy date formats like 2025-05-04 or 04/05/2025
+# Extract date parts from raw string (supports DD/MM/YYYY or YYYY-MM-DD)
 def extract_date_parts(val):
     val = str(val).strip().split(' ')[0].replace('-', '/')
     parts = val.split('/')
@@ -15,14 +15,14 @@ def extract_date_parts(val):
             return int(year), int(month), int(day)
     return None, None, None
 
-# For display inside Streamlit table (not used in Excel write)
+# Preview for Streamlit table
 def clean_date_as_preview(val):
     y, m, d = extract_date_parts(val)
     if y and m and d:
         return f"{str(d).zfill(2)}/{str(m).zfill(2)}/{str(y)}"
     return ""
 
-# Main splitting logic
+# Apply splitting or safe date formatting
 def split_column(df, column, method, parts):
     if method == 'Excel-Safe Date':
         df['Date'] = df[column].apply(clean_date_as_preview)
@@ -33,7 +33,7 @@ def split_column(df, column, method, parts):
             df[f"{column}_Part{i+1}"] = split_data[i]
     return df
 
-# Export using =TEXT(DATE(...)) for Excel-safe formatting
+# Use xlsxwriter to insert =TEXT(DATE(...)) formulas for safe Excel output
 def write_excel_with_safe_formula(df):
     import xlsxwriter
 
@@ -51,11 +51,10 @@ def write_excel_with_safe_formula(df):
             else:
                 worksheet.write(row_idx, date_col_index, '')
 
-        writer.save()
         return output.getvalue()
 
 # Streamlit UI
-st.title("📅 Excel-Proof Date Splitter")
+st.title("📅 Excel-Proof Date Splitter (No 00:00:00 Bug)")
 
 uploaded_file = st.file_uploader("📁 Upload Excel file (.xlsx)", type=["xlsx"])
 
@@ -91,18 +90,17 @@ if uploaded_file:
         st.success("✅ Done!")
         st.dataframe(df.head())
 
-        # Output handling
+        # Handle Excel export
         if 'Date' in df.columns:
             processed_data = write_excel_with_safe_formula(df)
         else:
             output = io.BytesIO()
             with pd.ExcelWriter(output, engine='openpyxl') as writer:
                 df.to_excel(writer, index=False, sheet_name='Sheet1')
-                writer.save()
                 processed_data = output.getvalue()
 
         st.download_button(
-            label="📥 Download Excel",
+            label="📥 Download Excel File",
             data=processed_data,
             file_name="final_output.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
