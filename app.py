@@ -1,20 +1,42 @@
 import streamlit as st
 import pandas as pd
+import re
 
 def split_column(df, column, delimiter, parts):
     if delimiter == 'Date & Time Split':
-        # Parse the datetime and convert to consistent string format
-        date_series = pd.to_datetime(df[column], errors='coerce')
-        df['Date'] = date_series.dt.strftime('%d/%m/%Y')  # Date format
-        df['Time'] = date_series.dt.strftime('%I:%M %p')  # Time format (12-hour with AM/PM)
+        dates = []
+        times = []
+
+        for val in df[column].astype(str):
+            # Regex to match common date formats
+            match = re.search(r'\d{2}/\d{2}/\d{4}|\d{4}-\d{2}-\d{2}', val)
+            if match:
+                date_str = match.group(0)
+                parsed_date = pd.to_datetime(date_str, dayfirst=True, errors='coerce')
+                dates.append(parsed_date.strftime('%d/%m/%Y') if not pd.isnull(parsed_date) else '')
+            else:
+                dates.append('')
+
+            # Regex to match time formats (with or without AM/PM)
+            match_time = re.search(r'\d{1,2}:\d{2}(:\d{2})?(\s*[APMapm]{2})?', val)
+            if match_time:
+                time_str = match_time.group(0)
+                parsed_time = pd.to_datetime(time_str, errors='coerce')
+                times.append(parsed_time.strftime('%I:%M %p') if not pd.isnull(parsed_time) else '')
+            else:
+                times.append('')
+
+        df['Date'] = dates
+        df['Time'] = times
+
     else:
-        # For generic delimiters like space, comma, etc.
         split_data = df[column].astype(str).str.split(delimiter, n=parts-1, expand=True)
         for i in range(parts):
             df[f"{column}_Part{i+1}"] = split_data[i]
+
     return df
 
-st.title("📊JOJU Excel Column Splitter Tool")
+st.title("📊 JP Excel Column Splitter Tool")
 
 uploaded_file = st.file_uploader("📁 Upload your Excel file (.xlsx)", type=["xlsx"])
 
