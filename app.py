@@ -2,35 +2,31 @@ import streamlit as st
 import pandas as pd
 import re
 
-# Helper to normalize mixed date formats to DD/MM/YYYY
+# Helper: Normalize all dates to DD/MM/YYYY and force text display in Excel
 def normalize_date_column(series):
     cleaned = []
     for val in series.astype(str):
         val = val.strip()
         try:
             if '/' in val:
-                # DD/MM/YYYY
                 parsed = pd.to_datetime(val, dayfirst=True, errors='coerce')
             elif '-' in val:
-                # YYYY-MM-DD
                 parsed = pd.to_datetime(val, dayfirst=False, errors='coerce')
             else:
                 parsed = pd.to_datetime(val, errors='coerce')
 
-            formatted = parsed.strftime('%d/%m/%Y') if not pd.isnull(parsed) else ''
+            # Add apostrophe so Excel treats it as text
+            formatted = "'" + parsed.strftime('%d/%m/%Y') if not pd.isnull(parsed) else ''
         except:
             formatted = ''
         cleaned.append(formatted)
     return cleaned
 
-# Main column splitting function
+# Split logic
 def split_column(df, column, delimiter, parts):
     if delimiter == 'Date & Time Split':
-        # Normalize full datetime string first
-        date_series = pd.to_datetime(df[column], errors='coerce')
         df['Date'] = normalize_date_column(df[column])
         
-        # Extract time if present
         times = []
         for val in df[column].astype(str):
             match_time = re.search(r'\d{1,2}:\d{2}(:\d{2})?(\s*[APMapm]{2})?', val)
@@ -41,14 +37,14 @@ def split_column(df, column, delimiter, parts):
             else:
                 times.append('')
         df['Time'] = times
+
     else:
-        # General text delimiter split
         split_data = df[column].astype(str).str.split(delimiter, n=parts-1, expand=True)
         for i in range(parts):
             df[f"{column}_Part{i+1}"] = split_data[i]
     return df
 
-# Streamlit UI
+# UI
 st.title("📊 Excel Column Splitter Tool")
 
 uploaded_file = st.file_uploader("📁 Upload your Excel file (.xlsx)", type=["xlsx"])
