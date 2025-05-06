@@ -1,61 +1,52 @@
 import streamlit as st
 import pandas as pd
+import io
 
-# Manual date cleaner that avoids pd.to_datetime completely
-def manually_clean_date(val):
-    val = str(val).strip()
+# Manual cleaning: parse only the date part and format as DD/MM/YYYY (but NOT datetime)
+def clean_date_as_text(val):
+    val = str(val).strip().split(" ")[0]  # Remove time
+    val = val.replace("-", "/")
 
-    # Acceptable: '2025-05-04', '24/03/2025', '2021-01-04 00:00:00', etc.
-    val = val.split(' ')[0].strip()  # Remove time part
-    val = val.replace('-', '/')
-
-    # Now reformat manually if structure is YYYY/MM/DD
-    if val.count('/') == 2:
-        parts = val.split('/')
-        # Handle YYYY/MM/DD or DD/MM/YYYY by checking year size
+    # Format: DD/MM/YYYY or YYYY/MM/DD
+    parts = val.split("/")
+    if len(parts) == 3:
         if len(parts[0]) == 4:
-            # It's YYYY/MM/DD — reorder
             year, month, day = parts
-            val = f"{day.zfill(2)}/{month.zfill(2)}/{year}"
-        elif len(parts[2]) == 4:
-            # Already DD/MM/YYYY
-            day, month, year = parts
-            val = f"{day.zfill(2)}/{month.zfill(2)}/{year}"
         else:
-            val = ''
-    else:
-        val = ''
+            day, month, year = parts
+        if all(x.isdigit() for x in [day, month, year]):
+            return f"{day.zfill(2)}/{month.zfill(2)}/{year}"
+    return ""
 
-    return "'" + val if val else ''
-
-def split_column(df, column, delimiter, parts):
-    if delimiter == 'Manual Date Formatter':
-        df['Date'] = df[column].apply(manually_clean_date)
+# Split logic
+def split_column(df, column, method, parts):
+    if method == 'Manual Date Formatter':
+        df['Date'] = df[column].apply(clean_date_as_text)
         df['Time'] = df[column].astype(str).apply(lambda x: x.split(' ')[1] if ' ' in x and ':' in x else '')
     else:
-        split_data = df[column].astype(str).str.split(delimiter, n=parts-1, expand=True)
+        split_data = df[column].astype(str).str.split(method, n=parts-1, expand=True)
         for i in range(parts):
             df[f"{column}_Part{i+1}"] = split_data[i]
     return df
 
-# Streamlit App UI
-st.title("✅ Excel-Proof Date Splitter (Manual Safe Mode)")
+# Streamlit UI
+st.title("📊 Excel Date Cleaner (No 00:00:00 Issue)")
 
-uploaded_file = st.file_uploader("📁 Upload your Excel file (.xlsx)", type=["xlsx"])
+uploaded_file = st.file_uploader("📁 Upload Excel file (.xlsx)", type=["xlsx"])
 
 if uploaded_file:
     df = pd.read_excel(uploaded_file)
-    st.write("📄 Preview of Uploaded Data:")
+    st.write("📋 Preview:")
     st.dataframe(df.head())
 
-    column = st.selectbox("📌 Choose column to clean/split", df.columns)
+    column = st.selectbox("📌 Choose column", df.columns)
 
-    split_option = st.selectbox(
-        "⚙️ Select split method",
+    method = st.selectbox(
+        "⚙️ Split method",
         ["Space", "Comma", "Hyphen (-)", "Underscore (_)", "Manual Date Formatter"]
     )
 
-    delimiter_map = {
+    method_map = {
         "Space": " ",
         "Comma": ",",
         "Hyphen (-)": "-",
@@ -63,18 +54,37 @@ if uploaded_file:
         "Manual Date Formatter": "manual"
     }
 
-    if split_option != "Manual Date Formatter":
-        num_parts = st.slider("🔢 Number of parts", 2, 4, value=2)
+    if method != "Manual Date Formatter":
+        num_parts = st.slider("🔢 Number of parts", 2, 4, 2)
 
-    if st.button("🚀 Run Split"):
-        if split_option == "Manual Date Formatter":
+    if st.button("🚀 Process"):
+        if method == "Manual Date Formatter":
             df = split_column(df, column, "manual", 2)
         else:
-            df = split_column(df, column, delimiter_map[split_option], num_parts)
+            df = split_column(df, column, method_map[method], num_parts)
 
-        st.success("✅ Done!")
+        st.success("✅ Split complete!")
         st.dataframe(df.head())
 
-        df.to_excel("split_output.xlsx", index=False)
-        with open("split_output.xlsx", "rb") as f:
-            st.download_button("📥 Download Output Excel", f, file_name="split_output.xlsx")
+        # Export using Excel-safe formulas to preserve format
+        output = io.BytesIO()
+        with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+            df.to_excel(writer, sheet_name='Sheet1', index=False)
+            workbook = writer.book
+            worksheet = writer.sheets['Sheet1']
+
+            if 'Date' in df.columns:
+                col_index = df.columns.get_loc('Date')
+                for row_idx, val in enumerate(df['Date'], start=1):  # Skip header row
+                    safe_val = val.replace("'", "")
+                    worksheet.write_formula(row_idx, col_index, f'="{safe_val}"')
+
+            writer.save()
+            processed_data = output.getvalue()
+
+        st.download_button(
+            label="📥 Download Clean Excel",
+            data=processed_data,
+            file_name="final_output.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
