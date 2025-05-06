@@ -1,41 +1,30 @@
 import streamlit as st
 import pandas as pd
-import re
 
-# Helper: Normalize all dates to DD/MM/YYYY and force text display in Excel
-def normalize_date_column(series):
-    cleaned = []
-    for val in series.astype(str):
-        val = val.strip()
-        try:
-            if '/' in val:
-                parsed = pd.to_datetime(val, dayfirst=True, errors='coerce')
-            elif '-' in val:
-                parsed = pd.to_datetime(val, dayfirst=False, errors='coerce')
-            else:
-                parsed = pd.to_datetime(val, errors='coerce')
+def reconstruct_date(row_chars):
+    # Join characters, sanitize, and match proper date
+    raw = ''.join(row_chars).strip()
 
-            # Add apostrophe so Excel treats it as text
-            formatted = "'" + parsed.strftime('%d/%m/%Y') if not pd.isnull(parsed) else ''
-        except:
-            formatted = ''
-        cleaned.append(formatted)
-    return cleaned
+    # Fix common separator issues
+    raw = raw.replace('-', '/').replace(' ', '')
 
-# Split logic
+    # Handle known length and format only
+    try:
+        parsed = pd.to_datetime(raw, dayfirst=True, errors='coerce')
+        return "'" + parsed.strftime('%d/%m/%Y') if not pd.isnull(parsed) else ''
+    except:
+        return ''
+
 def split_column(df, column, delimiter, parts):
-    if delimiter == 'Date & Time Split':
-        df['Date'] = normalize_date_column(df[column])
-        
+    if delimiter == 'Date & Time Split (By Char)':
+        char_df = df[column].astype(str).apply(lambda x: pd.Series(list(x)))
+        df['Reconstructed_Date'] = char_df.apply(reconstruct_date, axis=1)
+
+        # Optional: Extract time if needed (keeping original method)
         times = []
         for val in df[column].astype(str):
-            match_time = re.search(r'\d{1,2}:\d{2}(:\d{2})?(\s*[APMapm]{2})?', val)
-            if match_time:
-                time_str = match_time.group(0)
-                parsed_time = pd.to_datetime(time_str, errors='coerce')
-                times.append(parsed_time.strftime('%I:%M %p') if not pd.isnull(parsed_time) else '')
-            else:
-                times.append('')
+            parsed_time = pd.to_datetime(val, errors='coerce')
+            times.append(parsed_time.strftime('%I:%M %p') if not pd.isnull(parsed_time) else '')
         df['Time'] = times
 
     else:
@@ -44,21 +33,21 @@ def split_column(df, column, delimiter, parts):
             df[f"{column}_Part{i+1}"] = split_data[i]
     return df
 
-# UI
-st.title("📊 Excel Column Splitter Tool")
+# Streamlit UI
+st.title("📊 Robust Excel Column Splitter (Safe for Date Glitches)")
 
-uploaded_file = st.file_uploader("📁 Upload your Excel file (.xlsx)", type=["xlsx"])
+uploaded_file = st.file_uploader("📁 Upload Excel file (.xlsx)", type=["xlsx"])
 
 if uploaded_file:
     df = pd.read_excel(uploaded_file)
-    st.write("🔍 Preview of Uploaded File:")
+    st.write("📋 Preview:")
     st.dataframe(df.head())
 
-    column = st.selectbox("🧩 Select a column to split", df.columns)
+    column = st.selectbox("🔍 Select a column", df.columns)
 
     split_option = st.selectbox(
-        "🔣 How do you want to split?",
-        ["Space", "Comma", "Hyphen (-)", "Underscore (_)", "Date & Time Split"]
+        "🛠️ How do you want to split?",
+        ["Space", "Comma", "Hyphen (-)", "Underscore (_)", "Date & Time Split (By Char)"]
     )
 
     delimiter_map = {
@@ -66,22 +55,21 @@ if uploaded_file:
         "Comma": ",",
         "Hyphen (-)": "-",
         "Underscore (_)": "_",
-        "Date & Time Split": "Date & Time Split"
+        "Date & Time Split (By Char)": "CHAR"
     }
 
-    if split_option != "Date & Time Split":
-        num_parts = st.slider("🔢 How many parts to split into?", min_value=2, max_value=4, value=2)
+    if split_option != "Date & Time Split (By Char)":
+        num_parts = st.slider("How many parts?", 2, 4, 2)
 
-    if st.button("🚀 Split Column"):
-        if split_option == "Date & Time Split":
-            df = split_column(df, column, "Date & Time Split", 2)
+    if st.button("✅ Split Now"):
+        if split_option == "Date & Time Split (By Char)":
+            df = split_column(df, column, "CHAR", 2)
         else:
             df = split_column(df, column, delimiter_map[split_option], num_parts)
 
-        st.success("✅ Column split successfully!")
+        st.success("Done!")
         st.dataframe(df.head())
 
-        output_file = "split_output.xlsx"
-        df.to_excel(output_file, index=False)
-        with open(output_file, "rb") as f:
-            st.download_button("📥 Download Result", f, file_name="split_output.xlsx")
+        df.to_excel("split_output.xlsx", index=False)
+        with open("split_output.xlsx", "rb") as f:
+            st.download_button("📥 Download Result", f, "split_output.xlsx")
