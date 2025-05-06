@@ -2,29 +2,27 @@ import streamlit as st
 import pandas as pd
 import io
 
-# Extract date parts from various formats
+# Extract parts from messy date formats like 2025-05-04 or 04/05/2025
 def extract_date_parts(val):
     val = str(val).strip().split(' ')[0].replace('-', '/')
     parts = val.split('/')
     if len(parts) == 3:
         if len(parts[0]) == 4:
-            # Format: YYYY/MM/DD
             year, month, day = parts
         else:
-            # Format: DD/MM/YYYY
             day, month, year = parts
         if all(x.isdigit() for x in [day, month, year]):
             return int(year), int(month), int(day)
     return None, None, None
 
-# Manual cleaner — outputs "dd/mm/yyyy" as string for preview
+# For display inside Streamlit table (not used in Excel write)
 def clean_date_as_preview(val):
     y, m, d = extract_date_parts(val)
     if y and m and d:
         return f"{str(d).zfill(2)}/{str(m).zfill(2)}/{str(y)}"
     return ""
 
-# Split logic (normal or special)
+# Main splitting logic
 def split_column(df, column, method, parts):
     if method == 'Excel-Safe Date':
         df['Date'] = df[column].apply(clean_date_as_preview)
@@ -35,8 +33,10 @@ def split_column(df, column, method, parts):
             df[f"{column}_Part{i+1}"] = split_data[i]
     return df
 
-# Write Excel using =TEXT(DATE(...)) formula to avoid datetime formatting
+# Export using =TEXT(DATE(...)) for Excel-safe formatting
 def write_excel_with_safe_formula(df):
+    import xlsxwriter
+
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
         df.to_excel(writer, index=False, sheet_name='Sheet1')
@@ -55,7 +55,7 @@ def write_excel_with_safe_formula(df):
         return output.getvalue()
 
 # Streamlit UI
-st.title("📅 Excel-Safe Date Splitter (No 00:00:00 Bug)")
+st.title("📅 Excel-Proof Date Splitter")
 
 uploaded_file = st.file_uploader("📁 Upload Excel file (.xlsx)", type=["xlsx"])
 
@@ -64,10 +64,10 @@ if uploaded_file:
     st.write("📋 File Preview:")
     st.dataframe(df.head())
 
-    column = st.selectbox("🧩 Choose a column to process", df.columns)
+    column = st.selectbox("🧩 Choose a column to split", df.columns)
 
     method = st.selectbox(
-        "⚙️ Choose processing method",
+        "⚙️ Select split method",
         ["Space", "Comma", "Hyphen (-)", "Underscore (_)", "Excel-Safe Date"]
     )
 
@@ -80,22 +80,30 @@ if uploaded_file:
     }
 
     if method != "Excel-Safe Date":
-        num_parts = st.slider("🔢 How many parts to split into?", 2, 4, 2)
+        num_parts = st.slider("🔢 Number of parts", 2, 4, 2)
 
-    if st.button("🚀 Process Now"):
+    if st.button("🚀 Run Split"):
         if method == "Excel-Safe Date":
             df = split_column(df, column, "safe", 2)
         else:
             df = split_column(df, column, method_map[method], num_parts)
 
-        st.success("✅ Processing complete!")
+        st.success("✅ Done!")
         st.dataframe(df.head())
 
-        # Download with Excel-safe formula
-        processed_data = write_excel_with_safe_formula(df)
+        # Output handling
+        if 'Date' in df.columns:
+            processed_data = write_excel_with_safe_formula(df)
+        else:
+            output = io.BytesIO()
+            with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                df.to_excel(writer, index=False, sheet_name='Sheet1')
+                writer.save()
+                processed_data = output.getvalue()
+
         st.download_button(
-            label="📥 Download Final Excel (Text Format Date)",
+            label="📥 Download Excel",
             data=processed_data,
-            file_name="safe_date_output.xlsx",
+            file_name="final_output.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
