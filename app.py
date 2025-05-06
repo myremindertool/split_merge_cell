@@ -2,22 +2,37 @@ import streamlit as st
 import pandas as pd
 import re
 
+# Helper to normalize mixed date formats to DD/MM/YYYY
+def normalize_date_column(series):
+    cleaned = []
+    for val in series.astype(str):
+        val = val.strip()
+        try:
+            if '/' in val:
+                # DD/MM/YYYY
+                parsed = pd.to_datetime(val, dayfirst=True, errors='coerce')
+            elif '-' in val:
+                # YYYY-MM-DD
+                parsed = pd.to_datetime(val, dayfirst=False, errors='coerce')
+            else:
+                parsed = pd.to_datetime(val, errors='coerce')
+
+            formatted = parsed.strftime('%d/%m/%Y') if not pd.isnull(parsed) else ''
+        except:
+            formatted = ''
+        cleaned.append(formatted)
+    return cleaned
+
+# Main column splitting function
 def split_column(df, column, delimiter, parts):
     if delimiter == 'Date & Time Split':
-        dates = []
+        # Normalize full datetime string first
+        date_series = pd.to_datetime(df[column], errors='coerce')
+        df['Date'] = normalize_date_column(df[column])
+        
+        # Extract time if present
         times = []
-
         for val in df[column].astype(str):
-            # Regex to match common date formats
-            match = re.search(r'\d{2}/\d{2}/\d{4}|\d{4}-\d{2}-\d{2}', val)
-            if match:
-                date_str = match.group(0)
-                parsed_date = pd.to_datetime(date_str, dayfirst=True, errors='coerce')
-                dates.append(parsed_date.strftime('%d/%m/%Y') if not pd.isnull(parsed_date) else '')
-            else:
-                dates.append('')
-
-            # Regex to match time formats (with or without AM/PM)
             match_time = re.search(r'\d{1,2}:\d{2}(:\d{2})?(\s*[APMapm]{2})?', val)
             if match_time:
                 time_str = match_time.group(0)
@@ -25,18 +40,16 @@ def split_column(df, column, delimiter, parts):
                 times.append(parsed_time.strftime('%I:%M %p') if not pd.isnull(parsed_time) else '')
             else:
                 times.append('')
-
-        df['Date'] = dates
         df['Time'] = times
-
     else:
+        # General text delimiter split
         split_data = df[column].astype(str).str.split(delimiter, n=parts-1, expand=True)
         for i in range(parts):
             df[f"{column}_Part{i+1}"] = split_data[i]
-
     return df
 
-st.title("📊 JP Excel Column Splitter Tool")
+# Streamlit UI
+st.title("📊 Excel Column Splitter Tool")
 
 uploaded_file = st.file_uploader("📁 Upload your Excel file (.xlsx)", type=["xlsx"])
 
@@ -68,6 +81,7 @@ if uploaded_file:
             df = split_column(df, column, "Date & Time Split", 2)
         else:
             df = split_column(df, column, delimiter_map[split_option], num_parts)
+
         st.success("✅ Column split successfully!")
         st.dataframe(df.head())
 
