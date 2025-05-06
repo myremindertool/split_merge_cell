@@ -13,7 +13,7 @@ def split_column(df, column, delimiter, parts):
             df[f"{column}_Part{i+1}"] = split_data[i]
     return df
 
-st.title("📊 Excel Column Splitter Tool")
+st.title("📊 jo Excel Column Splitter Tool")
 
 uploaded_file = st.file_uploader("📁 Upload your Excel file (.xlsx)", type=["xlsx"])
 
