@@ -3,19 +3,20 @@ import pandas as pd
 import io
 import re
 
-# Function to clean and split date values
-def clean_and_split_date(val):
+# Clean and standardize dates, remove time
+def clean_date_only(val):
     val = str(val).strip().replace("-", "/")
     parts = val.split("/")
 
-    # Reverse if it starts with year (YYYY/MM/DD)
+    # If starts with year, reverse it
     if len(parts[0]) == 4:
         val = f"{parts[2]}/{parts[1]}/{parts[0]}"
 
-    chars = list(val)
-    return chars, val
+    # Extract just the date in DD/MM/YYYY
+    match = re.search(r"\b(\d{2}/\d{2}/\d{4})\b", val)
+    return match.group(1) if match else val
 
-# Standard split by delimiter
+# Generic split for non-date columns
 def generic_split(val, delimiter, parts):
     chunks = str(val).split(delimiter, maxsplit=parts - 1)
     return chunks + [''] * (parts - len(chunks))
@@ -28,8 +29,8 @@ def write_excel(df):
     output.seek(0)
     return output.read()
 
-# Streamlit UI
-st.title("🔀 Smart Column Splitter")
+# Streamlit App
+st.title("🧼 Clean Date Splitter or Column Split Tool")
 
 uploaded_file = st.file_uploader("📁 Upload Excel File", type=["xlsx"])
 
@@ -38,7 +39,7 @@ if uploaded_file:
     st.write("📋 File Preview:")
     st.dataframe(df.head())
 
-    column = st.selectbox("📌 Select column to split", df.columns)
+    column = st.selectbox("📌 Select column to process", df.columns)
 
     is_date = st.checkbox("🗓️ Is this a date column (e.g. 2022-03-15)?")
 
@@ -52,29 +53,24 @@ if uploaded_file:
             "Underscore (_)": "_"
         }
         delimiter = method_map[method]
-        num_parts = st.slider("🔢 Number of parts to split into", 2, 5, value=2)
+        num_parts = st.slider("🔢 Number of parts", 2, 5, value=2)
 
     if st.button("🚀 Process"):
         if is_date:
-            # Date cleaning and splitting
-            char_lists, clean_values = zip(*df[column].apply(clean_and_split_date))
-            max_len = max(len(chars) for chars in char_lists)
-            char_df = pd.DataFrame([chars + [''] * (max_len - len(chars)) for chars in char_lists])
-            char_df.columns = [f"Char{i+1}" for i in range(max_len)]
-            char_df["Cleaned_Value"] = clean_values
-            output_df = char_df
+            df["Cleaned_Date"] = df[column].apply(clean_date_only)
+            output_df = df[["Cleaned_Date"]]
         else:
-            # Generic splitting
             split_data = df[column].apply(lambda x: generic_split(x, delimiter, num_parts))
-            output_df = pd.concat([df, pd.DataFrame(split_data.tolist(), columns=[f"{column}_Part{i+1}" for i in range(num_parts)])], axis=1)
+            split_df = pd.DataFrame(split_data.tolist(), columns=[f"{column}_Part{i+1}" for i in range(num_parts)])
+            output_df = pd.concat([df, split_df], axis=1)
 
-        st.success("✅ Done! See your split data below.")
+        st.success("✅ Processing complete.")
         st.dataframe(output_df.head())
 
         final_excel = write_excel(output_df)
         st.download_button(
-            label="📥 Download Split Excel",
+            label="📥 Download Result",
             data=final_excel,
-            file_name="split_column_output.xlsx",
+            file_name="column_split_cleaned.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
