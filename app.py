@@ -3,31 +3,24 @@ import pandas as pd
 import io
 import re
 
-# ✅ Force consistent date + optional time, as text (Excel-safe)
-def clean_and_split_datetime(val):
-    val = str(val).strip()
+# Function to clean and split date values (your logic)
+def clean_and_split_date(val):
+    val = str(val).strip().replace("-", "/")
+    parts = val.split("/")
 
-    try:
-        dt = pd.to_datetime(val, errors='coerce', dayfirst=True)
-        if pd.isnull(dt):
-            return "'" + val, ""  # fallback raw text
-        date_str = "'" + dt.strftime('%d/%m/%Y')  # force uniform date format with apostrophe
-        time_str = dt.strftime('%H:%M:%S') if dt.time() != pd.Timestamp(0).time() else ""
-        return date_str, time_str
-    except Exception:
-        return "'" + val, ""
+    # Reverse if it starts with year (YYYY/MM/DD)
+    if len(parts[0]) == 4:
+        val = f"{parts[2]}/{parts[1]}/{parts[0]}"
 
-# Apply logic to the selected column
-def split_column(df, column, method, parts):
-    if method == 'Split Date and Time':
-        df['DOJ_Part1'], df['DOJ_Part2'] = zip(*df[column].apply(clean_and_split_datetime))
-    else:
-        split_data = df[column].astype(str).str.split(method, n=parts - 1, expand=True)
-        for i in range(parts):
-            df[f"{column}_Part{i+1}"] = split_data[i]
-    return df
+    chars = list(val)
+    return chars, val
 
-# Save Excel as openpyxl (string-safe)
+# Standard split by delimiter
+def generic_split(val, delimiter, parts):
+    chunks = str(val).split(delimiter, maxsplit=parts - 1)
+    return chunks + [''] * (parts - len(chunks))
+
+# Write to Excel
 def write_excel(df):
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
@@ -36,52 +29,50 @@ def write_excel(df):
     return output.read()
 
 # Streamlit UI
-st.title("📅 Uniform Date + Time Splitter (Excel-Proof Output)")
+st.title("🔀 Smart Column Splitter")
 
-uploaded_file = st.file_uploader("📁 Upload your Excel file (.xlsx)", type=["xlsx"])
+uploaded_file = st.file_uploader(📁 Upload Excel File", type=["xlsx"])
 
 if uploaded_file:
-    df = pd.read_excel(uploaded_file)
+    df = pd.read_excel(uploaed_file)
     st.write("📋 File Preview:")
     st.dataframe(df.head())
 
-    column = st.selectbox("📌 Select the column to split", df.columns)
+    column = st.selectbox("📌 Select column to split", df.columns)
 
-    method = st.selectbox(
-        "⚙️ Choose split method",
-        ["Space", "Comma", "Hyphen (-)", "Underscore (_)", "Split Date and Time"]
-    )
+    is_date = st.checkbox("🗓️ Is this a date column (e.g. 2022-03-15)?")
 
-    method_map = {
-        "Space": " ",
-        "Comma": ",",
-        "Hyphen (-)": "-",
-        "Underscore (_)": "_",
-        "Split Date and Time": "datetime"
-    }
+    if not is_date:
+        method = st.selectbox("✂️ Choose delimiter", ["Space", "Comma", "Hyphen (-)", "Slash (/)", "Underscore (_)"])
+        method_map = {
+            "Space": " ",
+            "Comma": ",",
+            "Hyphen (-)": "-",
+            "Slash (/)": "/",
+            "Underscore (_)": "_"
+        }
+        delimiter = method_map[method]
+        num_parts = st.slider("🔢 Number of parts to split into", 2, 5, value=2)
 
-    if method != "Split Date and Time":
-        num_parts = st.slider("🔢 How many parts to split into?", 2, 4, value=2)
-
-    if st.button("🚀 Run Split"):
-        if method == "Split Date and Time":
-            df = split_column(df, column, "datetime", 2)
+    if st.button("🚀 Process"):
+        if is_date:
+            char_lists, clean_values = zip(*df[column].apply(clean_and_split_date))
+            max_len = max(len(chars) for chars in char_lists)
+            char_df = pd.DataFrame([chars + [''] * (max_len - len(chars)) for chars in char_lists])
+            char_df.columns = [f"Char{i+1}" for i in range(max_len)]
+            char_df["Cleaned_Value"] = clean_values
+            output_df = char_df
         else:
-            df = split_column(df, column, method_map[method], num_parts)
+            split_data = df[column].apply(lambda x: generic_split(x, delimiter, num_parts))
+            output_df = pd.concat([df, pd.DataFrame(split_data.tolist(), columns=[f"{column}_Part{i+1}" for i in range(num_parts)])], axis=1)
 
-        st.success("✅ Done! Uniform date format applied.")
-        st.dataframe(df.head())
+        st.success("✅ Done!")
+        st.dataframe(output_df.head())
 
-        # Optional: add format check column
-        df['Date_Format_Flag'] = df['DOJ_Part1'].apply(
-            lambda x: 'OK' if re.match(r"'\d{2}/\d{2}/\d{4}", str(x)) else 'BAD'
-        )
-
-        excel_data = write_excel(df)
-
+        final_excel = write_excel(output_df)
         st.download_button(
-            label="📥 Download Clean Excel File",
-            data=excel_data,
-            file_name="clean_split_output.xlsx",
+            label="📥 Download Split Excel",
+            data=final_excel,
+            file_name="split_column_output.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
