@@ -3,7 +3,7 @@ import pandas as pd
 import io
 import re
 
-# Function to clean and split date values (your logic)
+# Function to clean and split date values
 def clean_and_split_date(val):
     val = str(val).strip().replace("-", "/")
     parts = val.split("/")
@@ -20,7 +20,7 @@ def generic_split(val, delimiter, parts):
     chunks = str(val).split(delimiter, maxsplit=parts - 1)
     return chunks + [''] * (parts - len(chunks))
 
-# Write to Excel
+# Save DataFrame to Excel
 def write_excel(df):
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
@@ -31,10 +31,10 @@ def write_excel(df):
 # Streamlit UI
 st.title("🔀 Smart Column Splitter")
 
-uploaded_file = st.file_uploader(📁 Upload Excel File", type=["xlsx"])
+uploaded_file = st.file_uploader("📁 Upload Excel File", type=["xlsx"])
 
 if uploaded_file:
-    df = pd.read_excel(uploaed_file)
+    df = pd.read_excel(uploaded_file)
     st.write("📋 File Preview:")
     st.dataframe(df.head())
 
@@ -56,6 +56,7 @@ if uploaded_file:
 
     if st.button("🚀 Process"):
         if is_date:
+            # Date cleaning and splitting
             char_lists, clean_values = zip(*df[column].apply(clean_and_split_date))
             max_len = max(len(chars) for chars in char_lists)
             char_df = pd.DataFrame([chars + [''] * (max_len - len(chars)) for chars in char_lists])
@@ -63,10 +64,11 @@ if uploaded_file:
             char_df["Cleaned_Value"] = clean_values
             output_df = char_df
         else:
+            # Generic splitting
             split_data = df[column].apply(lambda x: generic_split(x, delimiter, num_parts))
             output_df = pd.concat([df, pd.DataFrame(split_data.tolist(), columns=[f"{column}_Part{i+1}" for i in range(num_parts)])], axis=1)
 
-        st.success("✅ Done!")
+        st.success("✅ Done! See your split data below.")
         st.dataframe(output_df.head())
 
         final_excel = write_excel(output_df)
