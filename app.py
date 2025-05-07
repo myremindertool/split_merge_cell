@@ -3,28 +3,29 @@ import pandas as pd
 import io
 import re
 
-# Function: clean date, convert ISO to DD/MM/YYYY, remove time
-def clean_date_only(val):
-    val = str(val).strip().replace("-", "/")
-    parts = val.split("/")
+# 🧠 Clean and format date (remove time, reverse if ISO)
+def full_clean_date(val):
+    val = str(val).strip()
 
-    # Reverse if starts with year (e.g., 2022/02/03)
+    # Step 1: Remove time part (e.g., ' 00:00:00')
+    val = val.split()[0]
+
+    # Step 2: Normalize separator
+    val = val.replace("-", "/")
+
+    # Step 3: Reverse if it starts with a year
+    parts = val.split("/")
     if len(parts[0]) == 4:
         val = f"{parts[2]}/{parts[1]}/{parts[0]}"
 
-    # Remove time if present
-    val = re.sub(r'\s*\d{1,2}:\d{2}:\d{2}.*', '', val)
+    return val
 
-    # Extract only valid date part
-    match = re.search(r"\b\d{2}/\d{2}/\d{4}\b", val)
-    return match.group(0) if match else val
-
-# Fallback: split normally by delimiter
+# 🧩 Generic string split
 def generic_split(val, delimiter, parts):
     chunks = str(val).split(delimiter, maxsplit=parts - 1)
     return chunks + [''] * (parts - len(chunks))
 
-# Export to Excel
+# 💾 Save Excel file
 def write_excel(df):
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine="openpyxl") as writer:
@@ -32,8 +33,8 @@ def write_excel(df):
     output.seek(0)
     return output.read()
 
-# UI
-st.title("🧼 Clean Date Column or Split Any Column")
+# 🌐 Streamlit Interface
+st.title("🧼 Smart Column Cleaner + Splitter")
 
 uploaded_file = st.file_uploader("📁 Upload Excel File", type=["xlsx"])
 
@@ -42,9 +43,9 @@ if uploaded_file:
     st.write("📋 Preview of uploaded file:")
     st.dataframe(df.head())
 
-    column = st.selectbox("📌 Select column to process", df.columns)
+    column = st.selectbox("📌 Select the column to process", df.columns)
 
-    is_date = st.checkbox("🗓️ Is this a date column with mixed formats?")
+    is_date = st.checkbox("🗓️ Is this a date column with ISO/time format?")
 
     if not is_date:
         method = st.selectbox("✂️ Choose delimiter", ["Space", "Comma", "Hyphen (-)", "Slash (/)", "Underscore (_)"])
@@ -56,24 +57,24 @@ if uploaded_file:
             "Underscore (_)": "_"
         }
         delimiter = method_map[method]
-        num_parts = st.slider("🔢 Number of parts", 2, 5, value=2)
+        num_parts = st.slider("🔢 Number of parts to split into", 2, 5, value=2)
 
     if st.button("🚀 Run Processing"):
         if is_date:
-            df["Cleaned_Date"] = df[column].apply(clean_date_only)
-            output_df = df[["Cleaned_Date"]]
+            df["Cleaned_Date"] = df[column].apply(full_clean_date)
+            output_df = df  # Keep full original data + new cleaned column
         else:
             split_data = df[column].apply(lambda x: generic_split(x, delimiter, num_parts))
             split_df = pd.DataFrame(split_data.tolist(), columns=[f"{column}_Part{i+1}" for i in range(num_parts)])
             output_df = pd.concat([df, split_df], axis=1)
 
-        st.success("✅ Done!")
+        st.success("✅ Done! Your cleaned/split data is below.")
         st.dataframe(output_df.head())
 
         excel_data = write_excel(output_df)
         st.download_button(
-            label="📥 Download Output Excel",
+            label="📥 Download Cleaned Excel",
             data=excel_data,
-            file_name="processed_column_output.xlsx",
+            file_name="processed_output.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
